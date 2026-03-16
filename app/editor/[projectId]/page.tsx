@@ -40,6 +40,8 @@ export default function EditorPage() {
     type: "cover" | "lyric";
     phraseId?: string;
   }>({ isOpen: false, type: "cover" });
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editedTitle, setEditedTitle] = useState("");
 
   useEffect(() => {
     const loadedProject = ProjectStorage.load(projectId);
@@ -478,8 +480,49 @@ export default function EditorPage() {
     <div className="min-h-screen p-8">
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">{project.title}</h1>
+          <div className="flex-1 max-w-2xl">
+            {isEditingTitle ? (
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={editedTitle}
+                  onChange={(e) => setEditedTitle(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      const updatedProject = { ...project, title: editedTitle };
+                      ProjectStorage.save(updatedProject);
+                      setProject(updatedProject);
+                      setIsEditingTitle(false);
+                    } else if (e.key === "Escape") {
+                      setIsEditingTitle(false);
+                      setEditedTitle(project.title);
+                    }
+                  }}
+                  onBlur={() => {
+                    const updatedProject = { ...project, title: editedTitle };
+                    ProjectStorage.save(updatedProject);
+                    setProject(updatedProject);
+                    setIsEditingTitle(false);
+                  }}
+                  className="text-3xl font-bold px-2 py-1 bg-background border border-border rounded w-full"
+                  autoFocus
+                />
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 group">
+                <h1 className="text-3xl font-bold">{project.title}</h1>
+                <button
+                  onClick={() => {
+                    setEditedTitle(project.title);
+                    setIsEditingTitle(true);
+                  }}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity px-2 py-1 hover:bg-muted rounded text-sm"
+                  title="Edit project name"
+                >
+                  ✎
+                </button>
+              </div>
+            )}
             <p className="text-muted-foreground">
               {project.lyrics.length} lyric phrases • {project.styleTemplate} style
             </p>
@@ -551,19 +594,6 @@ export default function EditorPage() {
           </Card>
         )}
 
-        {/* Generate Images Button */}
-        {!isGeneratingImages && hasTimestamps(project) && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Generate Images</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Button onClick={() => generateAllImages(project)} disabled={!hasTimestamps(project)}>
-                Generate All Lyric Images
-              </Button>
-            </CardContent>
-          </Card>
-        )}
 
         {/* Video Settings */}
         {hasTimestamps(project) && (
@@ -992,15 +1022,26 @@ export default function EditorPage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>Lyrics & Images</CardTitle>
-              {project.lyrics.length > 0 && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => downloadSrt(project.lyrics, project.audioDuration, project.title)}
-                >
-                  Download Captions
-                </Button>
-              )}
+              <div className="flex items-center gap-2">
+                {!isGeneratingImages && hasTimestamps(project) && (
+                  <Button
+                    onClick={() => generateAllImages(project)}
+                    disabled={!hasTimestamps(project)}
+                    size="sm"
+                  >
+                    Generate All Images
+                  </Button>
+                )}
+                {project.lyrics.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => downloadSrt(project.lyrics, project.audioDuration, project.title)}
+                  >
+                    Download Captions
+                  </Button>
+                )}
+              </div>
             </div>
           </CardHeader>
           <CardContent>
