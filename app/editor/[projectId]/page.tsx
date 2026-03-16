@@ -13,6 +13,7 @@ import { VideoPreview } from "@/components/editor/VideoPreview";
 import { STYLE_TEMPLATES, FONT_OPTIONS, TEXT_COLOR_OPTIONS } from "@/types/project";
 import { downloadSrt } from "@/lib/srt";
 import { ImageHistoryModal } from "@/components/editor/ImageHistoryModal";
+import { PromptEditorModal } from "@/components/editor/PromptEditorModal";
 
 export default function EditorPage() {
   const params = useParams();
@@ -34,6 +35,11 @@ export default function EditorPage() {
   const [isRendering, setIsRendering] = useState(false);
   const [renderError, setRenderError] = useState("");
   const [videoUrl, setVideoUrl] = useState("");
+  const [promptEditor, setPromptEditor] = useState<{
+    isOpen: boolean;
+    type: "cover" | "lyric";
+    phraseId?: string;
+  }>({ isOpen: false, type: "cover" });
 
   useEffect(() => {
     const loadedProject = ProjectStorage.load(projectId);
@@ -59,7 +65,8 @@ export default function EditorPage() {
     setGenerationProgress({ current: 0, total: proj.lyrics.length });
 
     try {
-      const styleTemplate =
+      // Get default template
+      const defaultTemplate =
         STYLE_TEMPLATES.find((t) => t.id === proj.styleTemplate)?.promptTemplate ||
         STYLE_TEMPLATES[0].promptTemplate;
 
@@ -74,11 +81,14 @@ export default function EditorPage() {
       for (let i = 0; i < proj.lyrics.length; i++) {
         const phrase = proj.lyrics[i];
 
+        // Get the prompt template (custom or default)
+        const promptTemplate = phrase.customPrompt || defaultTemplate;
+
         // Replace placeholders in template
-        const finalPrompt = styleTemplate
-          .replace("{lyric}", phrase.text)
-          .replace("{font}", font)
-          .replace("{color}", color);
+        const finalPrompt = promptTemplate
+          .replace(/\{\{lyric\}\}/g, phrase.text)
+          .replace(/\{\{font\}\}/g, font)
+          .replace(/\{\{color\}\}/g, color);
 
         const response = await fetch("/api/generate-image", {
           method: "POST",
@@ -137,9 +147,12 @@ export default function EditorPage() {
       if (phraseIndex === -1) return;
 
       const phrase = project.lyrics[phraseIndex];
-      const styleTemplate =
+
+      // Get the prompt template (custom or default)
+      const promptTemplate = phrase.customPrompt || (
         STYLE_TEMPLATES.find((t) => t.id === project.styleTemplate)?.promptTemplate ||
-        STYLE_TEMPLATES[0].promptTemplate;
+        STYLE_TEMPLATES[0].promptTemplate
+      );
 
       // Get font and color settings
       const font = project.font || "elegant";
@@ -147,10 +160,10 @@ export default function EditorPage() {
       const color = TEXT_COLOR_OPTIONS.find(c => c.id === colorName)?.name.toLowerCase() || "white";
 
       // Replace placeholders in template
-      const finalPrompt = styleTemplate
-        .replace("{lyric}", phrase.text)
-        .replace("{font}", font)
-        .replace("{color}", color);
+      const finalPrompt = promptTemplate
+        .replace(/\{\{lyric\}\}/g, phrase.text)
+        .replace(/\{\{font\}\}/g, font)
+        .replace(/\{\{color\}\}/g, color);
 
       const response = await fetch("/api/generate-image", {
         method: "POST",
@@ -213,9 +226,14 @@ export default function EditorPage() {
     setIsGeneratingCover(true);
 
     try {
-      const styleTemplate =
-        STYLE_TEMPLATES.find((t) => t.id === proj.styleTemplate)?.promptTemplate ||
-        STYLE_TEMPLATES[0].promptTemplate;
+      // Get the prompt template (custom or default)
+      let promptTemplate = proj.coverPrompt;
+      if (!promptTemplate) {
+        const styleTemplate = STYLE_TEMPLATES.find((t) => t.id === proj.styleTemplate)?.promptTemplate ||
+          STYLE_TEMPLATES[0].promptTemplate;
+        // Convert {{lyric}} to {{title}} for cover
+        promptTemplate = styleTemplate.replace(/\{\{lyric\}\}/g, "{{title}}");
+      }
 
       // Get font and color settings
       const font = proj.font || "elegant";
@@ -229,10 +247,10 @@ export default function EditorPage() {
         : titleText;
 
       // Replace placeholders in template
-      const finalPrompt = styleTemplate
-        .replace("{lyric}", coverText)
-        .replace("{font}", font)
-        .replace("{color}", color);
+      const finalPrompt = promptTemplate
+        .replace(/\{\{title\}\}/g, coverText)
+        .replace(/\{\{font\}\}/g, font)
+        .replace(/\{\{color\}\}/g, color);
 
       const response = await fetch("/api/generate-image", {
         method: "POST",
@@ -898,6 +916,15 @@ export default function EditorPage() {
                         }}
                         className="w-full px-2 py-1 text-sm bg-background border border-border rounded"
                       />
+                      {/* Edit Prompt Button */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPromptEditor({ isOpen: true, type: "cover" })}
+                        className="w-full text-xs"
+                      >
+                        Edit Image Prompt
+                      </Button>
                       <div className="flex items-center justify-between">
                         <p className="text-xs text-muted-foreground">
                           {formatTime(0)} - {formatTime(project.lyrics[0]?.startTime || 0)}
@@ -1018,6 +1045,15 @@ export default function EditorPage() {
                               className="w-full px-2 py-1 text-sm font-medium bg-background border border-border rounded"
                               placeholder="Enter lyric text..."
                             />
+                            {/* Edit Prompt Button */}
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setPromptEditor({ isOpen: true, type: "lyric", phraseId: phrase.id })}
+                              className="w-full text-xs"
+                            >
+                              Edit Image Prompt
+                            </Button>
                             <div className="flex items-center justify-between">
                               {phrase.startTime >= 0 && (
                                 <p className="text-xs text-muted-foreground">
@@ -1147,6 +1183,67 @@ export default function EditorPage() {
                 }}
                 isRegenerating={regeneratingPhraseId === imageHistoryModal.phraseId}
                 title="Lyric Image History"
+              />
+            );
+          })()}
+        </>
+      )}
+
+      {/* Prompt Editor Modal */}
+      {project && promptEditor.isOpen && (
+        <>
+          {promptEditor.type === "cover" && (
+            <PromptEditorModal
+              isOpen={promptEditor.isOpen}
+              onClose={() => setPromptEditor({ isOpen: false, type: "cover" })}
+              onSave={(newPrompt) => {
+                const updatedProject = { ...project, coverPrompt: newPrompt };
+                ProjectStorage.save(updatedProject);
+                setProject(updatedProject);
+              }}
+              initialPrompt={
+                project.coverPrompt || (() => {
+                  const styleTemplate = STYLE_TEMPLATES.find((t) => t.id === project.styleTemplate);
+                  return (styleTemplate?.promptTemplate || "").replace(/\{\{lyric\}\}/g, "{{title}}");
+                })()
+              }
+              variables={{
+                title: project.videoDescription
+                  ? `${project.videoTitle || project.title} - ${project.videoDescription}`
+                  : (project.videoTitle || project.title || "Music Video"),
+                font: project.font || "elegant",
+                color: TEXT_COLOR_OPTIONS.find(c => c.id === (project.textColor || "white"))?.name.toLowerCase() || "white",
+              }}
+              title="Edit Cover Image Prompt"
+            />
+          )}
+          {promptEditor.type === "lyric" && promptEditor.phraseId && (() => {
+            const phrase = project.lyrics.find((l) => l.id === promptEditor.phraseId);
+            if (!phrase) return null;
+            return (
+              <PromptEditorModal
+                isOpen={promptEditor.isOpen}
+                onClose={() => setPromptEditor({ isOpen: false, type: "lyric" })}
+                onSave={(newPrompt) => {
+                  const updatedLyrics = project.lyrics.map((l) =>
+                    l.id === promptEditor.phraseId ? { ...l, customPrompt: newPrompt } : l
+                  );
+                  const updatedProject = { ...project, lyrics: updatedLyrics };
+                  ProjectStorage.save(updatedProject);
+                  setProject(updatedProject);
+                }}
+                initialPrompt={
+                  phrase.customPrompt || (
+                    STYLE_TEMPLATES.find((t) => t.id === project.styleTemplate)?.promptTemplate ||
+                    STYLE_TEMPLATES[0].promptTemplate
+                  )
+                }
+                variables={{
+                  lyric: phrase.text,
+                  font: project.font || "elegant",
+                  color: TEXT_COLOR_OPTIONS.find(c => c.id === (project.textColor || "white"))?.name.toLowerCase() || "white",
+                }}
+                title={`Edit Prompt for "${phrase.text.substring(0, 30)}${phrase.text.length > 30 ? '...' : ''}"`}
               />
             );
           })()}

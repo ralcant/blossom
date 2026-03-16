@@ -9,12 +9,16 @@ export interface ImageGenerationResult {
 /**
  * Generate an image with embedded lyrics using fal.ai FLUX Pro v1.1 Ultra (Nano Banana)
  * @param lyric The lyric text to embed in the image
- * @param styleTemplate The prompt template with {lyric} placeholder
+ * @param promptTemplate The prompt template with {{lyric}}, {{font}}, {{color}} placeholders
+ * @param font Optional font style to replace {{font}}
+ * @param color Optional color to replace {{color}}
  * @returns Generated image URL
  */
 export async function generateImage(
   lyric: string,
-  styleTemplate: string
+  promptTemplate: string,
+  font?: string,
+  color?: string
 ): Promise<ImageGenerationResult> {
   const apiKey = process.env.FAL_AI_API_KEY;
 
@@ -27,8 +31,11 @@ export async function generateImage(
     credentials: apiKey,
   });
 
-  // Replace {lyric} placeholder in template
-  const prompt = styleTemplate.replace("{lyric}", lyric);
+  // Replace variables in template
+  let prompt = promptTemplate
+    .replace(/\{\{lyric\}\}/g, lyric)
+    .replace(/\{\{font\}\}/g, font || "elegant")
+    .replace(/\{\{color\}\}/g, color || "white");
 
   console.log("Generating image with prompt:", prompt.substring(0, 100) + "...");
 
